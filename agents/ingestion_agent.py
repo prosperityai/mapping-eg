@@ -1,10 +1,9 @@
-
 from typing import List, Dict, Any, Optional, Union, Tuple
 import os
 import pandas as pd
 import numpy as np
 from langchain.schema import Document
-from langchain.document_loaders import UnstructuredExcelLoader
+from langchain.document_loaders import UnstructuredExcelLoader, PyPDFLoader, DirectoryLoader
 from langchain.document_transformers import LongContextReorder
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import logging
@@ -20,13 +19,8 @@ logger = logging.getLogger('ingestion_agent')
 
 class IngestionAgent:
     """
-    Agent responsible for reading regulatory obligations and KYC policies from Excel files,
-    and structuring each row as a Document (text + metadata).
-
-    This agent handles:
-    1. Loading Excel files (both regulatory requirements and KYC policies)
-    2. Converting Excel data into structured document objects
-    3. Error handling and validation for all ingestion operations
+    Agent responsible for reading regulatory obligations, KYC policies, and knowledge base documents,
+    and structuring them as Documents (text + metadata).
     """
 
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
@@ -46,6 +40,27 @@ class IngestionAgent:
         )
         logger.info(f"Initialized IngestionAgent with chunk_size={chunk_size}, chunk_overlap={chunk_overlap}")
 
+    def validate_file(self, file_path: str, allowed_extensions: List[str] = None) -> Tuple[bool, str]:
+        """
+        Validates that the given file exists and has an allowed extension.
+
+        Args:
+            file_path: Path to the file
+            allowed_extensions: List of allowed file extensions (default: None = all extensions)
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not os.path.exists(file_path):
+            return False, f"File does not exist: {file_path}"
+
+        if allowed_extensions:
+            file_ext = os.path.splitext(file_path)[1].lower()
+            if file_ext not in allowed_extensions:
+                return False, f"Invalid file type: {file_ext}. Allowed types: {', '.join(allowed_extensions)}"
+
+        return True, ""
+
     def validate_excel_file(self, file_path: str) -> Tuple[bool, str]:
         """
         Validates that the given file is a valid Excel file.
@@ -56,11 +71,10 @@ class IngestionAgent:
         Returns:
             Tuple of (is_valid, error_message)
         """
-        if not os.path.exists(file_path):
-            return False, f"File does not exist: {file_path}"
-
-        if not file_path.endswith(('.xlsx', '.xls')):
-            return False, f"File is not an Excel file: {file_path}"
+        # First validate the file exists and has correct extension
+        is_valid, error_msg = self.validate_file(file_path, ['.xlsx', '.xls'])
+        if not is_valid:
+            return False, error_msg
 
         try:
             # Try to read the file to validate it's a proper Excel file
@@ -71,23 +85,56 @@ class IngestionAgent:
             logger.error(error_msg)
             return False, error_msg
 
+    def validate_pdf_file(self, file_path: str) -> Tuple[bool, str]:
+        """
+        Validates that the given file is a valid PDF file.
+
+        Args:
+            file_path: Path to the PDF file
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # First validate the file exists and has correct extension
+        is_valid, error_msg = self.validate_file(file_path, ['.pdf'])
+        if not is_valid:
+            return False, error_msg
+
+        # For PDFs, we'll do a basic check on file size and extension
+        try:
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                return False, "PDF file is empty"
+
+            # We could use PyPDF2 to validate the file content, but
+            # we'll rely on the extension and non-zero size for basic validation
+            return True, ""
+        except Exception as e:
+            error_msg = f"Error checking PDF file: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+
     def save_uploaded_file(self, uploaded_file) -> Tuple[str, Optional[str]]:
         """
         Saves an uploaded file to a temporary location and returns the path.
 
         Args:
-            uploaded_file: The uploaded file object (from Streamlit)
+            uploaded_file: The uploaded file object (from Streamlit or similar)
 
         Returns:
             Tuple of (path, error_message)
         """
         try:
-            # Create a temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+            # Get file extension
+            file_name = uploaded_file.name
+            file_ext = os.path.splitext(file_name)[1].lower()
+
+            # Create a temporary file with the correct extension
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
                 tmp_file.write(uploaded_file.read())
                 temp_path = tmp_file.name
 
-            logger.info(f"Saved uploaded file to temporary location: {temp_path}")
+            logger.info(f"Saved uploaded file {file_name} to temporary location: {temp_path}")
             return temp_path, None
         except Exception as e:
             error_msg = f"Error saving uploaded file: {str(e)}"
@@ -304,28 +351,37 @@ class IngestionAgent:
             logger.error(f"{error_msg}\n{traceback.format_exc()}")
             return [], error_msg
 
-    def ingest_full_policy_document(self, file_path: str) -> Tuple[List[Document], Optional[str]]:
+    def ingest_pdf_document(self, file_path: str) -> Tuple[List[Document], Optional[str]]:
         """
-        Ingests a full KYC policy document (not row-based, but the actual long document).
-        This method is useful for ingesting large policy documents that need to be chunked.
+        Ingests a PDF document, chunks it, and returns a list of document chunks.
 
         Args:
-            file_path: Path to the document file
+            file_path: Path to the PDF file
 
         Returns:
-            Tuple of (list of documents, error_message if any)
+            Tuple of (list of document chunks, error_message if any)
         """
-        logger.info(f"Starting ingestion of full policy document: {file_path}")
+        logger.info(f"Starting ingestion of PDF document: {file_path}")
+
+        # Validate the file
+        is_valid, error_msg = self.validate_pdf_file(file_path)
+        if not is_valid:
+            return [], error_msg
 
         try:
-            # Use Langchain's UnstructuredExcelLoader
-            loader = UnstructuredExcelLoader(file_path)
+            # Use Langchain's PDF loader
+            loader = PyPDFLoader(file_path)
             documents = loader.load()
 
             if not documents:
-                return [], "No content extracted from the document"
+                return [], "No content extracted from the PDF file"
 
-            logger.info(f"Loaded {len(documents)} sections from document, chunking...")
+            logger.info(f"Loaded {len(documents)} pages from PDF, chunking...")
+
+            # Add document name to metadata
+            for doc in documents:
+                doc.metadata["source"] = "knowledge_base"
+                doc.metadata["file_name"] = os.path.basename(file_path)
 
             # Process with text splitter for large documents
             chunked_documents = self.text_splitter.split_documents(documents)
@@ -333,28 +389,59 @@ class IngestionAgent:
             # Reorder for better context
             reordered = LongContextReorder().transform_documents(chunked_documents)
 
-            logger.info(f"Successfully created {len(reordered)} chunks from policy document")
+            logger.info(f"Successfully created {len(reordered)} chunks from PDF document")
             return reordered, None
 
         except Exception as e:
-            error_msg = f"Error processing full policy document: {str(e)}"
+            error_msg = f"Error processing PDF document: {str(e)}"
             logger.error(f"{error_msg}\n{traceback.format_exc()}")
             return [], error_msg
 
-    def process_excel_file(self, file_path: str, file_type: str = "regulations") -> Tuple[List[Document], Optional[str]]:
+    def ingest_directory_of_documents(self, dir_path: str) -> Tuple[List[Document], Optional[str]]:
         """
-        Process an Excel file based on its type.
+        Ingests all PDF documents in a directory.
 
         Args:
-            file_path: Path to the Excel file
-            file_type: Type of file ("regulations" or "kyc_policy")
+            dir_path: Path to the directory containing PDF files
 
         Returns:
             Tuple of (list of documents, error_message if any)
         """
-        if file_type.lower() == "regulations":
-            return self.ingest_regulations(file_path)
-        elif file_type.lower() == "kyc_policy":
-            return self.ingest_kyc_policy(file_path)
-        else:
-            return [], f"Unsupported file type: {file_type}"
+        logger.info(f"Starting ingestion of documents from directory: {dir_path}")
+
+        try:
+            # Check if directory exists
+            if not os.path.isdir(dir_path):
+                return [], f"Directory does not exist: {dir_path}"
+
+            # Check if there are PDF files in the directory
+            pdf_files = [f for f in os.listdir(dir_path) if f.lower().endswith('.pdf')]
+            if not pdf_files:
+                return [], f"No PDF files found in directory: {dir_path}"
+
+            # Use DirectoryLoader to load all PDFs
+            loader = DirectoryLoader(dir_path, glob="**/*.pdf", loader_cls=PyPDFLoader)
+            documents = loader.load()
+
+            if not documents:
+                return [], "No content extracted from PDF files in directory"
+
+            logger.info(f"Loaded {len(documents)} pages from {len(pdf_files)} PDFs, chunking...")
+
+            # Add source info to metadata
+            for doc in documents:
+                doc.metadata["source"] = "knowledge_base"
+
+            # Process with text splitter for large documents
+            chunked_documents = self.text_splitter.split_documents(documents)
+
+            # Reorder for better context
+            reordered = LongContextReorder().transform_documents(chunked_documents)
+
+            logger.info(f"Successfully created {len(reordered)} chunks from PDF documents in directory")
+            return reordered, None
+
+        except Exception as e:
+            error_msg = f"Error processing PDF documents in directory: {str(e)}"
+            logger.error(f"{error_msg}\n{traceback.format_exc()}")
+            return [], error_msg
