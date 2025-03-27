@@ -4,4 +4,5 @@ from ui.upload_page import display_upload_page
 from ui.review_page import display_review_page, display_documents_preview
 from ui.vectorize_page import display_vectorize_page, build_vector_store
 from ui.classification_page import display_classification_page, get_relevant_kb_docs, classify_requirement, batch_classify_requirements
+from ui.mapping_page import display_mapping_page, get_relevant_kyc_policies, map_requirement, batch_map_requirements
 from ui.export_page import display_export_page

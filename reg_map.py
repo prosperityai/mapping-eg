@@ -7,7 +7,7 @@ import logging
 import time
 
 # Import agents
-from agents import IngestionAgent, EmbeddingAgent, ClassificationAgent
+from agents import IngestionAgent, EmbeddingAgent, ClassificationAgent, MappingAgent
 
 # Import UI components
 from ui import (
@@ -15,6 +15,7 @@ from ui import (
     display_review_page,
     display_vectorize_page,
     display_classification_page,
+    display_mapping_page,
     display_export_page
 )
 
@@ -73,13 +74,22 @@ def initialize_agents(config):
             )
         classification_agent = st.session_state.classification_agent
 
-        return ingestion_agent, embedding_agent, classification_agent
+        logger.info("Initializing mapping agent")
+        # Initialize mapping agent (if not already in session)
+        if "mapping_agent" not in st.session_state:
+            st.session_state.mapping_agent = MappingAgent(
+                openai_api_key=config["openai_api_key"],
+                model_name=config["llm_model"]
+            )
+        mapping_agent = st.session_state.mapping_agent
+
+        return ingestion_agent, embedding_agent, classification_agent, mapping_agent
 
     except Exception as e:
         logger.error(f"Error initializing agents: {str(e)}", exc_info=True)
         st.error(f"Error initializing agents: {str(e)}")
         st.code(traceback.format_exc())
-        return None, None, None
+        return None, None, None, None
 
 def initialize_session_state():
     """Initialize session state variables if not already set"""
@@ -121,6 +131,14 @@ def initialize_session_state():
     if "classification_results" not in st.session_state:
         st.session_state.classification_results = []
 
+    # Mapping tracking
+    if "mapped_requirements" not in st.session_state:
+        st.session_state.mapped_requirements = []
+    if "current_mapping_idx" not in st.session_state:
+        st.session_state.current_mapping_idx = 0
+    if "mappings_completed" not in st.session_state:
+        st.session_state.mappings_completed = False
+
 def main():
     """Main application entry point"""
     try:
@@ -161,8 +179,8 @@ def main():
 
                 # Reset button for troubleshooting
                 if st.button("Reset Application State"):
-                    # Keep only embedding and classification agents
-                    keep_vars = ["embedding_agent", "classification_agent", "debug_mode"]
+                    # Keep only agents
+                    keep_vars = ["embedding_agent", "classification_agent", "mapping_agent", "debug_mode"]
                     for key in list(st.session_state.keys()):
                         if key not in keep_vars:
                             del st.session_state[key]
@@ -175,8 +193,9 @@ def main():
                 "Upload Documents",
                 "Review Documents",
                 "Build Vector Indices",
-                "Classify Requirements",  # Changed from "Classification & Mapping"
-                "Export Results"          # Will be replaced with "Map Requirements" in the future
+                "Classify Requirements",
+                "Map Requirements",
+                "Export Results"
             ]
 
             for i, step in enumerate(steps):
@@ -206,8 +225,8 @@ def main():
         logger.info(f"Current step: {st.session_state.current_step}")
 
         # Initialize agents
-        ingestion_agent, embedding_agent, classification_agent = initialize_agents(config)
-        if None in (ingestion_agent, embedding_agent, classification_agent):
+        ingestion_agent, embedding_agent, classification_agent, mapping_agent = initialize_agents(config)
+        if None in (ingestion_agent, embedding_agent, classification_agent, mapping_agent):
             st.error("Failed to initialize one or more agents. Please check the logs.")
             st.stop()
 
@@ -225,6 +244,9 @@ def main():
             logger.info("Displaying classification page")
             display_classification_page(embedding_agent, classification_agent)
         elif st.session_state.current_step == 4:
+            logger.info("Displaying mapping page")
+            display_mapping_page(embedding_agent, mapping_agent)
+        elif st.session_state.current_step == 5:
             logger.info("Displaying export page")
             display_export_page()
         else:

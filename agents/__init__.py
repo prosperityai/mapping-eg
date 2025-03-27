@@ -4,3 +4,4 @@
 from agents.ingestion_agent import IngestionAgent
 from agents.embedding_agent import EmbeddingAgent
 from agents.classification_agent import ClassificationAgent
+from agents.mapping_agent import MappingAgent
