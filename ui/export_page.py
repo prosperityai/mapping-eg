@@ -52,12 +52,6 @@ def display_export_page():
             gap_analysis = req.get("gap_analysis", "")
             mapped_policies = req.get("mapped_policies", [])
 
-            # Create policy references string
-            policy_refs = []
-            for policy in mapped_policies:
-                policy_refs.append(f"{policy.get('master_sheet', '')}-{policy.get('minor_sheet', '')}")
-            policy_refs_str = ", ".join(policy_refs)
-
             # Create a row with all the mapping information
             row = {}
 
@@ -72,7 +66,6 @@ def display_export_page():
             # Add mapping details
             row["Coverage"] = coverage
             row["Confidence"] = confidence
-            row["Policy References"] = policy_refs_str
             row["Coverage Explanation"] = coverage_explanation
             row["Gap Analysis"] = gap_analysis
 
@@ -82,12 +75,47 @@ def display_export_page():
             else:
                 row["KYC Standards Impact"] = "Uplift"
 
+            # Extract Master Sheet and Minor Sheet details from mapped policies
+            # If there are multiple mapped policies, use the first one with highest relevance
+            master_sheets = []
+            minor_sheets = []
+            sections = []
+            titles = []
+            policy_refs = []
+
+            # Sort policies by relevance score in descending order
+            sorted_policies = sorted(mapped_policies, key=lambda x: x.get('relevance_score', 0), reverse=True)
+
+            for policy in sorted_policies:
+                master_sheet = policy.get('master_sheet', '')
+                minor_sheet = policy.get('minor_sheet', '')
+                section = policy.get('section', '')
+                title = policy.get('title', '')
+
+                if master_sheet:
+                    master_sheets.append(master_sheet)
+                if minor_sheet:
+                    minor_sheets.append(minor_sheet)
+                if section:
+                    sections.append(section)
+                if title:
+                    titles.append(title)
+
+                policy_refs.append(f"{master_sheet}-{minor_sheet}")
+
+            # Add separate columns for Master Sheet and Minor Sheet
+            row["Master Sheets"] = ", ".join(master_sheets)
+            row["Minor Sheets"] = ", ".join(minor_sheets)
+            row["Sections"] = ", ".join(sections)
+            row["Titles"] = ", ".join(titles)
+            row["Policy References"] = ", ".join(policy_refs)
+
             # Add mappings for specific B1 format columns
-            row["If equivalent, provide KYC Standard, including section"] = policy_refs_str if coverage == "Equivalent" else ""
+            row["If equivalent, provide KYC Standard, including section"] = ", ".join(policy_refs) if coverage == "Equivalent" else ""
 
             # For Program Level requirements
             if req_type == "Program-Level":
-                row["If Program Level requirement, select Appendix Serial #"] = policy_refs_str if policy_refs else ""
+                row["If Program Level requirement, select Appendix Serial #"] = ", ".join(policy_refs) if policy_refs else ""
 
             # For Uplifts
             if coverage in ["Partial Uplift", "Full Uplift"]:
@@ -101,6 +129,27 @@ def display_export_page():
 
             # Remove any duplicate columns
             mapping_df = mapping_df.loc[:, ~mapping_df.columns.duplicated()]
+
+            # Reorder columns to prioritize Master Sheet and Minor Sheet
+            priority_columns = [
+                "Requirement Text",
+                "Requirement Type",
+                "Coverage",
+                "KYC Standards Impact",
+                "Master Sheets",
+                "Minor Sheets",
+                "Sections",
+                "Titles"
+            ]
+
+            # Get remaining columns excluding priority ones
+            remaining_columns = [col for col in mapping_df.columns if col not in priority_columns]
+
+            # Create new column order
+            new_column_order = priority_columns + [col for col in remaining_columns if col in mapping_df.columns]
+
+            # Reorder DataFrame
+            mapping_df = mapping_df[new_column_order]
 
             # Display the mapping results
             st.write("### Comprehensive Mapping Results")
@@ -147,6 +196,34 @@ def display_export_page():
 
                     summary_df = pd.DataFrame(summary_data)
                     summary_df.to_excel(writer, index=False, sheet_name="Summary")
+
+                    # Add a policies sheet with detailed mapping of each policy
+                    policy_rows = []
+                    for i, req in enumerate(st.session_state.mapped_requirements):
+                        requirement_data = req.get("requirement", {})
+                        req_text = requirement_data.get("text", "")
+                        req_type = requirement_data.get("type", "Unknown")
+                        coverage = req.get("coverage", "Unknown")
+
+                        # Process each mapped policy separately
+                        for policy in req.get("mapped_policies", []):
+                            policy_row = {
+                                "Requirement Number": i + 1,
+                                "Requirement Text": req_text,
+                                "Requirement Type": req_type,
+                                "Coverage": coverage,
+                                "Master Sheet": policy.get("master_sheet", ""),
+                                "Minor Sheet": policy.get("minor_sheet", ""),
+                                "Section": policy.get("section", ""),
+                                "Title": policy.get("title", ""),
+                                "Relevance Score": policy.get("relevance_score", 0),
+                                "Policy Explanation": policy.get("explanation", "")
+                            }
+                            policy_rows.append(policy_row)
+
+                    if policy_rows:
+                        policy_df = pd.DataFrame(policy_rows)
+                        policy_df.to_excel(writer, index=False, sheet_name="Detailed Policy Mappings")
 
                 excel_data = open(tmp_file.name, "rb").read()
 
