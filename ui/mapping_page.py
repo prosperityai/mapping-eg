@@ -244,22 +244,36 @@ def display_mapping_page(embedding_agent, mapping_agent):
             req = result.get("requirement", {})
             req_text = req.get("text", "")[:100] + "..." if len(req.get("text", "")) > 100 else req.get("text", "")
 
-            # Get number of mapped policies
-            num_policies = len(result.get("mapped_policies", []))
+            # Get mapped policies
+            mapped_policies = result.get("mapped_policies", [])
+            num_policies = len(mapped_policies)
+
+            # Extract Master Sheet and Minor Sheet information
+            master_sheets = []
+            minor_sheets = []
+
+            for policy in mapped_policies:
+                master_sheet = policy.get('master_sheet', '')
+                minor_sheet = policy.get('minor_sheet', '')
+
+                if master_sheet and master_sheet not in master_sheets:
+                    master_sheets.append(master_sheet)
+                if minor_sheet and minor_sheet not in minor_sheets:
+                    minor_sheets.append(minor_sheet)
 
             results_data.append({
                 "Index": i + 1,
                 "Requirement": req_text,
                 "Type": req.get("type", "Unknown"),
                 "Coverage": result.get("coverage", "Unknown"),
+                "Master Sheets": ", ".join(master_sheets),
+                "Minor Sheets": ", ".join(minor_sheets),
                 "Mapped Policies": num_policies,
-                "Confidence": f"{result.get('confidence', 0.0):.2f}",
-                "Needs Review": "Yes" if result.get("confidence", 0.0) < 0.7 else "No"
+                "Confidence": f"{result.get('confidence', 0.0):.2f}"
             })
 
         results_df = pd.DataFrame(results_data)
         st.dataframe(results_df, use_container_width=True)
-
         # Show summary statistics
         st.write("### Mapping Summary")
         coverages = [r.get("coverage", "Unknown") for r in st.session_state.mapped_requirements]

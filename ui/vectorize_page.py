@@ -160,48 +160,71 @@ def display_vectorize_page(embedding_agent, vector_dir: str):
             if not success:
                 st.error(f"Failed to build regulatory vector store: {error}")
                 st.stop()
-
-            # Build KYC policy vector store
-            kyc_container.info("Creating vector store for KYC policy...")
+            # Build regulatory vector store (always required)
+            reg_container.info("Creating vector store for regulatory requirements...")
             success, error = build_vector_store(
                 embedding_agent,
-                st.session_state.kyc_documents,
-                KYC_VECTOR_STORE,
+                st.session_state.regulatory_documents,
+                REG_VECTOR_STORE,
                 vector_dir,
-                kyc_container
+                reg_container
             )
 
             if not success:
-                st.error(f"Failed to build KYC policy vector store: {error}")
+                st.error(f"Failed to build regulatory vector store: {error}")
                 st.stop()
 
-            # Build knowledge base vector store
-            kb_container.info("Creating vector store for knowledge base...")
-            success, error = build_vector_store(
-                embedding_agent,
-                st.session_state.kb_documents,
-                KB_VECTOR_STORE,
-                vector_dir,
-                kb_container
-            )
-
-            if not success:
-                st.error(f"Failed to build knowledge base vector store: {error}")
-                st.stop()
-
-            # Create combined vector store
-            combined_container.info("Creating combined vector store...")
-            try:
-                embedding_agent.combine_vector_stores(
-                    target_name=COMBINED_VECTOR_STORE,
-                    source_names=[KYC_VECTOR_STORE, KB_VECTOR_STORE],
-                    persist_directory=vector_dir
+            # Build KYC policy vector store (if available)
+            has_kyc = "kyc_documents" in st.session_state and st.session_state.kyc_documents
+            if has_kyc:
+                kyc_container.info("Creating vector store for KYC policy...")
+                success, error = build_vector_store(
+                    embedding_agent,
+                    st.session_state.kyc_documents,
+                    KYC_VECTOR_STORE,
+                    vector_dir,
+                    kyc_container
                 )
-                combined_container.success("Successfully created combined vector store!")
-            except Exception as e:
-                combined_container.error(f"Error creating combined vector store: {str(e)}")
-                # Not critical, so continue
 
+                if not success:
+                    st.error(f"Failed to build KYC policy vector store: {error}")
+                    st.stop()
+            else:
+                kyc_container.warning("No KYC documents provided. Skipping KYC policy vector store creation.")
+
+            # Build knowledge base vector store (if available)
+            has_kb = "kb_documents" in st.session_state and st.session_state.kb_documents
+            if has_kb:
+                kb_container.info("Creating vector store for knowledge base...")
+                success, error = build_vector_store(
+                    embedding_agent,
+                    st.session_state.kb_documents,
+                    KB_VECTOR_STORE,
+                    vector_dir,
+                    kb_container
+                )
+
+                if not success:
+                    st.error(f"Failed to build knowledge base vector store: {error}")
+                    st.stop()
+            else:
+                kb_container.warning("No knowledge base documents provided. Skipping knowledge base vector store creation.")
+
+            # Create combined vector store (if both KYC and KB are available)
+            if has_kyc and has_kb:
+                combined_container.info("Creating combined vector store...")
+                try:
+                    embedding_agent.combine_vector_stores(
+                        target_name=COMBINED_VECTOR_STORE,
+                        source_names=[KYC_VECTOR_STORE, KB_VECTOR_STORE],
+                        persist_directory=vector_dir
+                    )
+                    combined_container.success("Successfully created combined vector store!")
+                except Exception as e:
+                    combined_container.error(f"Error creating combined vector store: {str(e)}")
+                    # Not critical, so continue
+            else:
+                combined_container.warning("Missing either KYC or KB documents. Skipping combined vector store creation.")
             # Display success message
             st.session_state.vector_stores_built = True
             st.success("All vector stores built successfully!")

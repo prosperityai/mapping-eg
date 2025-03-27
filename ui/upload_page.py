@@ -315,21 +315,26 @@ def display_upload_page(ingestion_agent, kb_dir):
     # Navigation buttons
     st.markdown("---")
     ready_to_proceed = (
-            "regulatory_documents" in st.session_state and st.session_state.regulatory_documents and
-            "kyc_documents" in st.session_state and st.session_state.kyc_documents and
-            "kb_documents" in st.session_state and st.session_state.kb_documents
+            "regulatory_documents" in st.session_state and st.session_state.regulatory_documents
     )
 
     if not ready_to_proceed:
-        missing = []
-        if "regulatory_documents" not in st.session_state or not st.session_state.regulatory_documents:
-            missing.append("Regulatory Requirements")
-        if "kyc_documents" not in st.session_state or not st.session_state.kyc_documents:
-            missing.append("KYC Policy")
-        if "kb_documents" not in st.session_state or not st.session_state.kb_documents:
-            missing.append("Knowledge Base Documents")
+        st.warning("Please upload at least the Regulatory Requirements file before proceeding.")
 
-        st.warning(f"Please upload all required documents before proceeding. Missing: {', '.join(missing)}")
+    # Show hints about optional files
+    if ready_to_proceed and (
+            "kyc_documents" not in st.session_state or not st.session_state.kyc_documents or
+            "kb_documents" not in st.session_state or not st.session_state.kb_documents
+    ):
+        st.info("""
+        Note: You have uploaded the regulatory requirements, which is the minimum needed to proceed.
+        
+        For better results, consider also uploading:
+        - KYC Policy (B1 Mastersheet) for more accurate mapping
+        - Knowledge Base Documents for better classification and context
+        
+        You can proceed now if these files were uploaded in a previous session.
+        """)
 
     if ready_to_proceed:
         if st.button("Next: Review Documents"):

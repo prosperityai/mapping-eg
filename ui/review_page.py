@@ -36,6 +36,30 @@ def display_documents_preview(documents: List[Document], num_docs: int = 5, is_k
 def display_review_page():
     """Display the review interface"""
     st.header("Step 2: Review Ingested Documents")
+    if "regulatory_documents" not in st.session_state or not st.session_state.regulatory_documents:
+        st.error("No regulatory requirements found. Please go back and upload at least the regulatory requirements file.")
+        if st.button("Back to Upload"):
+            st.session_state.current_step = 0
+            st.rerun()
+        st.stop()
+
+    # Show warning/info for missing optional documents
+    has_kyc = "kyc_documents" in st.session_state and st.session_state.kyc_documents
+    has_kb = "kb_documents" in st.session_state and st.session_state.kb_documents
+
+    if not has_kyc or not has_kb:
+        missing = []
+        if not has_kyc:
+            missing.append("KYC Policy (B1 Mastersheet)")
+        if not has_kb:
+            missing.append("Knowledge Base Documents")
+
+        st.warning(f"""
+        You are proceeding with only some of the recommended documents.
+        Missing: {', '.join(missing)}
+        
+        This may affect the quality of classification and mapping results.
+        """)
 
     # Display summary statistics
     col1, col2, col3 = st.columns(3)
