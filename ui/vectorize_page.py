@@ -4,6 +4,7 @@ import streamlit as st
 import os
 from typing import List, Tuple, Optional
 import logging
+import time
 from langchain.schema import Document
 
 # Configure logging
@@ -67,11 +68,17 @@ def display_vectorize_page(embedding_agent, vector_dir: str):
     This allows the system to find similar documents efficiently during the mapping process.
     """)
 
-    # Define vector store names
+    # Define vector store names - use constants that match what's used in classification page
     REG_VECTOR_STORE = "regulatory_requirements"
     KYC_VECTOR_STORE = "kyc_policy"
     KB_VECTOR_STORE = "knowledge_base"
     COMBINED_VECTOR_STORE = "combined_store"
+
+    # Store these in session state to ensure consistency across pages
+    st.session_state.reg_vector_store = REG_VECTOR_STORE
+    st.session_state.kyc_vector_store = KYC_VECTOR_STORE
+    st.session_state.kb_vector_store = KB_VECTOR_STORE
+    st.session_state.combined_vector_store = COMBINED_VECTOR_STORE
 
     # Check if vector stores already exist
     try:
@@ -93,20 +100,31 @@ def display_vectorize_page(embedding_agent, vector_dir: str):
                 with st.spinner("Loading existing vector stores..."):
                     try:
                         # Load existing vector stores
-                        embedding_agent.load_vector_store(REG_VECTOR_STORE, vector_dir)
-                        embedding_agent.load_vector_store(KYC_VECTOR_STORE, vector_dir)
-                        embedding_agent.load_vector_store(KB_VECTOR_STORE, vector_dir)
+                        reg_result = embedding_agent.load_vector_store(REG_VECTOR_STORE, vector_dir)
+                        kyc_result = embedding_agent.load_vector_store(KYC_VECTOR_STORE, vector_dir)
+                        kb_result = embedding_agent.load_vector_store(KB_VECTOR_STORE, vector_dir)
+
+                        # Verify they were loaded correctly
+                        if not all([reg_result, kyc_result, kb_result]):
+                            missing = []
+                            if not reg_result: missing.append(REG_VECTOR_STORE)
+                            if not kyc_result: missing.append(KYC_VECTOR_STORE)
+                            if not kb_result: missing.append(KB_VECTOR_STORE)
+                            st.error(f"Failed to load some vector stores: {', '.join(missing)}")
+                            st.stop()
 
                         # Check if combined store exists
                         if os.path.exists(os.path.join(vector_dir, COMBINED_VECTOR_STORE)):
                             embedding_agent.load_vector_store(COMBINED_VECTOR_STORE, vector_dir)
 
                         st.session_state.vector_stores_built = True
-                        st.success("Successfully loaded existing vector stores!")
 
-                        # Show stats
-                        stats = embedding_agent.get_stats()
-                        st.json(stats)
+                        # Display available store names for debugging
+                        available_stores = embedding_agent.list_vector_stores()
+                        st.success(f"Successfully loaded vector stores: {', '.join(available_stores)}")
+
+                        # Add delay to ensure user sees the success message
+                        time.sleep(2)
 
                         # Move to next step
                         st.session_state.current_step = 3
@@ -155,3 +173,48 @@ def display_vectorize_page(embedding_agent, vector_dir: str):
 
             if not success:
                 st.error(f"Failed to build KYC policy vector store: {error}")
+                st.stop()
+
+            # Build knowledge base vector store
+            kb_container.info("Creating vector store for knowledge base...")
+            success, error = build_vector_store(
+                embedding_agent,
+                st.session_state.kb_documents,
+                KB_VECTOR_STORE,
+                vector_dir,
+                kb_container
+            )
+
+            if not success:
+                st.error(f"Failed to build knowledge base vector store: {error}")
+                st.stop()
+
+            # Create combined vector store
+            combined_container.info("Creating combined vector store...")
+            try:
+                embedding_agent.combine_vector_stores(
+                    target_name=COMBINED_VECTOR_STORE,
+                    source_names=[KYC_VECTOR_STORE, KB_VECTOR_STORE],
+                    persist_directory=vector_dir
+                )
+                combined_container.success("Successfully created combined vector store!")
+            except Exception as e:
+                combined_container.error(f"Error creating combined vector store: {str(e)}")
+                # Not critical, so continue
+
+            # Display success message
+            st.session_state.vector_stores_built = True
+            st.success("All vector stores built successfully!")
+
+            # Add delay to ensure user sees the success message
+            time.sleep(2)
+
+            # Move to next step
+            st.session_state.current_step = 3
+            st.rerun()
+
+    # Navigation
+    st.markdown("---")
+    if st.button("⬅️ Back to Document Review"):
+        st.session_state.current_step = 1
+        st.rerun()

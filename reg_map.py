@@ -131,6 +131,59 @@ def main():
             layout="wide"
         )
 
+        # Add a sidebar for debug options
+        with st.sidebar:
+            st.title("Regulatory Mapping Tool")
+
+            # Debug mode toggle
+            if "debug_mode" not in st.session_state:
+                st.session_state.debug_mode = False
+
+            st.session_state.debug_mode = st.checkbox("Debug Mode", value=st.session_state.debug_mode)
+
+            if st.session_state.debug_mode:
+                st.write("### Session State Variables")
+
+                # Display session state variables useful for debugging
+                debug_vars = [
+                    "current_step",
+                    "vector_stores_built",
+                    "reg_vector_store",
+                    "kyc_vector_store",
+                    "kb_vector_store"
+                ]
+
+                for var in debug_vars:
+                    if var in st.session_state:
+                        st.write(f"{var}: {st.session_state[var]}")
+                    else:
+                        st.write(f"{var}: Not set")
+
+                # Reset button for troubleshooting
+                if st.button("Reset Application State"):
+                    # Keep only embedding and classification agents
+                    keep_vars = ["embedding_agent", "classification_agent", "debug_mode"]
+                    for key in list(st.session_state.keys()):
+                        if key not in keep_vars:
+                            del st.session_state[key]
+                    st.success("Application state reset!")
+                    st.rerun()
+
+            # Navigation links
+            st.write("### Navigation")
+            steps = [
+                "Upload Documents",
+                "Review Documents",
+                "Build Vector Indices",
+                "Classification & Mapping",
+                "Export Results"
+            ]
+
+            for i, step in enumerate(steps):
+                if st.button(f"{i+1}. {step}"):
+                    st.session_state.current_step = i
+                    st.rerun()
+
         # Display application title
         st.title("Regulatory Mapping Tool (LLM-driven)")
 
@@ -149,6 +202,9 @@ def main():
         # Initialize session state
         initialize_session_state()
 
+        # Log the current step
+        logger.info(f"Current step: {st.session_state.current_step}")
+
         # Initialize agents
         ingestion_agent, embedding_agent, classification_agent = initialize_agents(config)
         if None in (ingestion_agent, embedding_agent, classification_agent):
@@ -157,16 +213,22 @@ def main():
 
         # Display the appropriate page based on current step
         if st.session_state.current_step == 0:
+            logger.info("Displaying upload page")
             display_upload_page(ingestion_agent, KB_DIR)
         elif st.session_state.current_step == 1:
+            logger.info("Displaying review page")
             display_review_page()
         elif st.session_state.current_step == 2:
+            logger.info("Displaying vectorize page")
             display_vectorize_page(embedding_agent, VECTOR_DIR)
         elif st.session_state.current_step == 3:
+            logger.info("Displaying classification page")
             display_classification_page(embedding_agent, classification_agent)
         elif st.session_state.current_step == 4:
+            logger.info("Displaying export page")
             display_export_page()
         else:
+            logger.error(f"Unknown step: {st.session_state.current_step}")
             st.error(f"Unknown step: {st.session_state.current_step}")
             st.session_state.current_step = 0
             st.rerun()

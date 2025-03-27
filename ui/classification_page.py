@@ -25,10 +25,14 @@ def get_relevant_kb_docs(embedding_agent,
         List of relevant documents
     """
     try:
+        # Get the KB vector store name from session state for consistency
+        kb_store_name = st.session_state.get("kb_vector_store", "knowledge_base")
+
         # Get the KB vector store
-        kb_store = embedding_agent.get_vector_store("knowledge_base")
+        kb_store = embedding_agent.get_vector_store(kb_store_name)
         if not kb_store:
-            logger.warning("Knowledge base vector store not found")
+            logger.warning(f"Knowledge base vector store '{kb_store_name}' not found")
+            st.warning(f"Knowledge base vector store '{kb_store_name}' not found. Please go back and build the vector indices.")
             return []
 
         # Retrieve similar documents with scores
@@ -119,6 +123,10 @@ def batch_classify_requirements(classification_agent,
 
 def display_classification_page(embedding_agent, classification_agent):
     """Display the classification interface"""
+    # Debug log to ensure this function is being called
+    logger.info("Classification page is being displayed")
+    st.write("Debug: Classification page is loading...")
+
     st.header("Step 4: Classification & Mapping")
 
     # Check if vector stores have been built
@@ -128,6 +136,47 @@ def display_classification_page(embedding_agent, classification_agent):
             st.session_state.current_step = 2
             st.rerun()
         st.stop()
+
+    # Load and verify vector stores
+    st.write("Checking vector stores...")
+    available_stores = embedding_agent.list_vector_stores()
+    st.write(f"Available vector stores: {available_stores}")
+
+    reg_store_name = st.session_state.get("reg_vector_store", "regulatory_requirements")
+    kyc_store_name = st.session_state.get("kyc_vector_store", "kyc_policy")
+    kb_store_name = st.session_state.get("kb_vector_store", "knowledge_base")
+
+    # Verify required stores exist
+    missing_stores = []
+    for store_name in [reg_store_name, kyc_store_name, kb_store_name]:
+        if store_name not in available_stores:
+            missing_stores.append(store_name)
+
+    if missing_stores:
+        st.error(f"Missing required vector stores: {', '.join(missing_stores)}")
+        st.write("Please go back and rebuild the vector stores.")
+        if st.button("Rebuild Vector Stores"):
+            st.session_state.current_step = 2
+            st.rerun()
+        st.stop()
+
+    # Debug: List available vector stores to help diagnose issues
+    st.sidebar.subheader("Debug Information")
+    available_stores = embedding_agent.list_vector_stores()
+    vector_store_names = {
+        "Regulatory Requirements": st.session_state.get("reg_vector_store", "regulatory_requirements"),
+        "KYC Policy": st.session_state.get("kyc_vector_store", "kyc_policy"),
+        "Knowledge Base": st.session_state.get("kb_vector_store", "knowledge_base"),
+        "Combined Store": st.session_state.get("combined_vector_store", "combined_store")
+    }
+
+    st.sidebar.write("Expected Vector Stores:")
+    for label, name in vector_store_names.items():
+        status = "✅ Loaded" if name in available_stores else "❌ Not Found"
+        st.sidebar.write(f"{label}: {name} - {status}")
+
+    st.sidebar.write("All Available Vector Stores:")
+    st.sidebar.write(", ".join(available_stores) if available_stores else "None")
 
     st.write("""
     Now that the vector stores are built, we can start classifying the regulatory requirements
@@ -200,7 +249,13 @@ def display_classification_page(embedding_agent, classification_agent):
                             )
 
                             # Get relevant KYC docs
-                            kyc_store = embedding_agent.get_vector_store("kyc_policy")
+                            kyc_store_name = st.session_state.get("kyc_vector_store", "kyc_policy")
+                            kyc_store = embedding_agent.get_vector_store(kyc_store_name)
+
+                            if kyc_store is None:
+                                st.error(f"KYC Policy vector store '{kyc_store_name}' not found. Cannot proceed with classification.")
+                                st.stop()
+
                             similar_kyc_docs = kyc_store.similarity_search(req_doc.page_content, k=3)
 
                             # Create processed requirement
@@ -397,15 +452,23 @@ def display_classification_page(embedding_agent, classification_agent):
         st.write("**Similar KYC Policy Items:**")
 
         with st.spinner("Finding similar KYC policies..."):
-            # Use the vector store directly
-            kyc_store = embedding_agent.get_vector_store("kyc_policy")
-            similar_kyc_docs = kyc_store.similarity_search_with_score(current_req_text, k=3)
+            # Get the KYC vector store name from session state for consistency
+            kyc_store_name = st.session_state.get("kyc_vector_store", "kyc_policy")
 
-            # Extract docs and add similarity scores to metadata
-            kyc_docs = []
-            for doc, score in similar_kyc_docs:
-                doc.metadata["similarity_score"] = score
-                kyc_docs.append(doc)
+            # Use the vector store directly
+            kyc_store = embedding_agent.get_vector_store(kyc_store_name)
+
+            if kyc_store is None:
+                st.error(f"KYC Policy vector store '{kyc_store_name}' not found. Please go back and build the vector indices.")
+                kyc_docs = []
+            else:
+                similar_kyc_docs = kyc_store.similarity_search_with_score(current_req_text, k=3)
+
+                # Extract docs and add similarity scores to metadata
+                kyc_docs = []
+                for doc, score in similar_kyc_docs:
+                    doc.metadata["similarity_score"] = score
+                    kyc_docs.append(doc)
 
             # Display similar KYC documents
             for i, doc in enumerate(kyc_docs):
@@ -443,14 +506,16 @@ def display_classification_page(embedding_agent, classification_agent):
 
         # Initialize classification options if not already in session
         if f"classification_type_{current_idx}" not in st.session_state:
-            st.session_state[f"classification_type_{current_idx}"] = initial_type or ""
+            st.session_state[f"classification_type_{current_idx}"] = initial_type or "CDD"  # Default to CDD
         if f"classification_coverage_{current_idx}" not in st.session_state:
-            st.session_state[f"classification_coverage_{current_idx}"] = ""
+            st.session_state[f"classification_coverage_{current_idx}"] = "Equivalent"  # Default to Equivalent
         if f"mapped_policies_{current_idx}" not in st.session_state:
             st.session_state[f"mapped_policies_{current_idx}"] = ""
         if f"explanation_{current_idx}" not in st.session_state:
             st.session_state[f"explanation_{current_idx}"] = initial_explanation or ""
 
+
+        # Form for user classification
         # Form for user classification
         with st.form(key=f"classification_form_{current_idx}"):
             # Type classification
@@ -544,12 +609,60 @@ def display_classification_page(embedding_agent, classification_agent):
                             kb_docs=kb_docs
                         )
 
-                        # Update form fields
-                        st.session_state[f"classification_type_{current_idx}"] = result.get("type", "Program-Level")
-                        st.session_state[f"explanation_{current_idx}"] = result.get("explanation", "")
+                        # Store results in new session state variables that don't conflict with the form
+                        st.session_state[f"llm_type_{current_idx}"] = result.get("type", "Program-Level")
+                        st.session_state[f"llm_explanation_{current_idx}"] = result.get("explanation", "")
+                        st.session_state[f"llm_confidence_{current_idx}"] = result.get("confidence", 0.0)
 
-                        st.success("Classification complete! Review and submit to continue.")
-                        st.rerun()
+                        st.success("Classification complete! The LLM suggests:")
+
+                        # Display the results
+                        st.write(f"**Type:** {result.get('type', 'Unknown')}")
+                        st.write(f"**Confidence:** {result.get('confidence', 0.0):.2f}")
+                        st.write(f"**Explanation:** {result.get('explanation', '')}")
+
+                        # Provide a button to use these suggestions
+                        if st.button("Use These Suggestions"):
+                            # Create a new processed requirement with the LLM suggestions
+                            classification = {
+                                "type": result.get("type", "Unknown"),
+                                "coverage": "Equivalent",  # Default value
+                                "mapped_policies": [],
+                                "explanation": result.get("explanation", ""),
+                                "confidence": result.get("confidence", 0.0),
+                            }
+
+                            processed_req = {
+                                "requirement": {
+                                    "text": current_req_text,
+                                    "metadata": current_req_doc.metadata
+                                },
+                                "similar_kyc_docs": [
+                                    {
+                                        "text": doc.page_content,
+                                        "metadata": doc.metadata
+                                    } for doc in kyc_docs
+                                ],
+                                "similar_kb_docs": [
+                                    {
+                                        "text": doc.page_content,
+                                        "metadata": doc.metadata
+                                    } for doc in kb_docs
+                                ],
+                                "classification": classification,
+                                "manual_classification": False,
+                                "processed_at": time.time()
+                            }
+
+                            # Add to processed requirements
+                            if current_idx < len(st.session_state.processed_requirements):
+                                st.session_state.processed_requirements[current_idx] = processed_req
+                            else:
+                                st.session_state.processed_requirements.append(processed_req)
+
+                            # Move to next requirement
+                            st.session_state.current_requirement_idx += 1
+                            st.rerun()
 
                     except Exception as e:
                         st.error(f"Error classifying requirement: {str(e)}")
