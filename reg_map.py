@@ -112,8 +112,8 @@ def initialize_session_state():
         st.session_state.vector_stores_built = False
 
     # Classification tracking
-    if "processed_requirements" not in st.session_state:
-        st.session_state.processed_requirements = []
+    if "classified_requirements" not in st.session_state:
+        st.session_state.classified_requirements = []
     if "current_requirement_idx" not in st.session_state:
         st.session_state.current_requirement_idx = 0
     if "classifications_completed" not in st.session_state:
@@ -175,8 +175,8 @@ def main():
                 "Upload Documents",
                 "Review Documents",
                 "Build Vector Indices",
-                "Classification & Mapping",
-                "Export Results"
+                "Classify Requirements",  # Changed from "Classification & Mapping"
+                "Export Results"          # Will be replaced with "Map Requirements" in the future
             ]
 
             for i, step in enumerate(steps):
