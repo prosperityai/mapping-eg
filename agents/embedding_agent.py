@@ -8,7 +8,7 @@ import traceback
 import pickle
 import time
 from langchain.schema import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.vectorstores.base import VectorStore
 
@@ -24,7 +24,7 @@ class EmbeddingAgent:
     Agent responsible for embedding documents and creating/updating vector stores.
 
     This agent handles:
-    1. Embedding documents using OpenAI embeddings
+    1. Embedding documents using OpenAI or Azure OpenAI embeddings
     2. Creating and managing FAISS vector stores
     3. Persisting vector stores for later use
     4. Combining and updating existing vector stores
@@ -32,22 +32,50 @@ class EmbeddingAgent:
 
     def __init__(self,
                  openai_api_key: Optional[str] = None,
-                 model_name: str = "text-embedding-ada-002"):
+                 model_name: str = "text-embedding-ada-002",
+                 use_azure: bool = False,
+                 azure_deployment: Optional[str] = None,
+                 azure_endpoint: Optional[str] = None,
+                 azure_api_version: Optional[str] = "2023-05-15"):
         """
         Initialize the embedding agent.
 
         Args:
-            openai_api_key: API key for OpenAI (optional, will use environment variable if not provided)
+            openai_api_key: API key for OpenAI or Azure OpenAI
             model_name: Name of the embedding model to use
+            use_azure: Whether to use Azure OpenAI (default: False)
+            azure_deployment: Azure OpenAI deployment name for embeddings (required if use_azure=True)
+            azure_endpoint: Azure OpenAI endpoint (required if use_azure=True)
+            azure_api_version: Azure OpenAI API version (default: 2023-05-15)
         """
         self.model_name = model_name
         self.openai_api_key = openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.use_azure = use_azure
 
-        # Set up OpenAI embeddings
-        self.embeddings = OpenAIEmbeddings(
-            openai_api_key=self.openai_api_key,
-            model=model_name
-        )
+        # Set up embeddings based on configuration
+        if use_azure:
+            if not azure_deployment:
+                azure_deployment = os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+
+            if not azure_endpoint:
+                azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+
+            if not azure_deployment or not azure_endpoint:
+                raise ValueError("Azure deployment name and endpoint must be provided for Azure OpenAI")
+
+            logger.info(f"Using AzureOpenAIEmbeddings with deployment {azure_deployment}")
+            self.embeddings = AzureOpenAIEmbeddings(
+                azure_deployment=azure_deployment,
+                openai_api_version=azure_api_version,
+                azure_endpoint=azure_endpoint,
+                openai_api_key=self.openai_api_key
+            )
+        else:
+            logger.info(f"Using OpenAIEmbeddings with model {model_name}")
+            self.embeddings = OpenAIEmbeddings(
+                openai_api_key=self.openai_api_key,
+                model=model_name
+            )
 
         # Dictionary to store vector stores by name
         self.vector_stores = {}
@@ -172,6 +200,7 @@ class EmbeddingAgent:
                 "store_name": store_name,
                 "document_count": len(vector_store.docstore._dict),
                 "embedding_model": self.model_name,
+                "use_azure": self.use_azure,
                 "created_at": time.time()
             }
 
@@ -326,7 +355,8 @@ class EmbeddingAgent:
             return {
                 "name": store_name,
                 "document_count": len(store.docstore._dict),
-                "embedding_model": self.model_name
+                "embedding_model": self.model_name,
+                "use_azure": self.use_azure
             }
         else:
             # Stats for all stores
@@ -334,6 +364,7 @@ class EmbeddingAgent:
                 "total_stores": len(self.vector_stores),
                 "store_names": list(self.vector_stores.keys()),
                 "embedding_model": self.model_name,
+                "use_azure": self.use_azure,
                 "stores": {}
             }
 
