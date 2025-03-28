@@ -46,7 +46,6 @@ def setup_directories():
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
         logger.info(f"Directory {directory} exists or was created")
-
 def initialize_agents(config):
     """Initialize the agents with the provided configuration"""
     try:
@@ -59,10 +58,23 @@ def initialize_agents(config):
         logger.info("Initializing embedding agent")
         # Initialize embedding agent (if not already in session)
         if "embedding_agent" not in st.session_state:
-            st.session_state.embedding_agent = EmbeddingAgent(
-                openai_api_key=config["openai_api_key"],
-                model_name=config["embedding_model"]
-            )
+            # Check if using Azure OpenAI
+            if config.get("use_azure"):
+                logger.info("Using Azure OpenAI for embeddings")
+                st.session_state.embedding_agent = EmbeddingAgent(
+                    openai_api_key=config["azure_api_key"],
+                    model_name=config["embedding_model"],
+                    use_azure=True,
+                    azure_deployment=config["azure_embedding_deployment"],
+                    azure_endpoint=config["azure_api_base"],
+                    azure_api_version=config["azure_api_version"]
+                )
+            else:
+                logger.info("Using standard OpenAI for embeddings")
+                st.session_state.embedding_agent = EmbeddingAgent(
+                    openai_api_key=config["openai_api_key"],
+                    model_name=config["embedding_model"]
+                )
         embedding_agent = st.session_state.embedding_agent
 
         logger.info("Initializing classification agent")
