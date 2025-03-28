@@ -65,12 +65,12 @@ class EmbeddingAgent:
 
             logger.info(f"Using AzureOpenAIEmbeddings with deployment {azure_deployment}")
 
-            # Create Azure OpenAI embeddings with the correct parameter names
+            # Create Azure OpenAI embeddings with the exact parameter names as expected
             self.embeddings = AzureOpenAIEmbeddings(
-                deployment=azure_deployment,  # Use 'deployment' not 'azure_deployment'
-                openai_api_version=azure_api_version,
-                azure_endpoint=azure_endpoint,  # This is the correct parameter name
-                openai_api_key=self.openai_api_key
+                azure_endpoint=azure_endpoint,
+                api_key=self.openai_api_key,
+                api_version=azure_api_version,
+                deployment=azure_deployment
             )
         else:
             logger.info(f"Using OpenAIEmbeddings with model {model_name}")
