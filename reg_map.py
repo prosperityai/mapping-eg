@@ -1,5 +1,3 @@
-# File: reg_map.py (Main Application)
-
 import streamlit as st
 import os
 import traceback
@@ -46,6 +44,7 @@ def setup_directories():
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
         logger.info(f"Directory {directory} exists or was created")
+
 def initialize_agents(config):
     """Initialize the agents with the provided configuration"""
     try:
@@ -66,7 +65,7 @@ def initialize_agents(config):
                     model_name=config["embedding_model"],
                     use_azure=True,
                     azure_deployment=config["azure_embedding_deployment"],
-                    azure_endpoint=config["azure_api_base"],  # This is your Azure endpoint
+                    azure_endpoint=config["azure_endpoint"],
                     azure_api_version=config["azure_api_version"]
                 )
             else:

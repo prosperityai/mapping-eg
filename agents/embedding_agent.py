@@ -1,8 +1,7 @@
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional, Union
 import os
 import numpy as np
 import pandas as pd
-import tempfile
 import logging
 import traceback
 import pickle
@@ -12,7 +11,6 @@ from langchain_openai import OpenAIEmbeddings, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.vectorstores.base import VectorStore
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -45,7 +43,7 @@ class EmbeddingAgent:
             model_name: Name of the embedding model to use
             use_azure: Whether to use Azure OpenAI (default: False)
             azure_deployment: Azure OpenAI deployment name for embeddings (required if use_azure=True)
-            azure_endpoint: Azure OpenAI endpoint (required if use_azure=True)
+            azure_endpoint: Azure OpenAI endpoint URL (required if use_azure=True)
             azure_api_version: Azure OpenAI API version (default: 2023-05-15)
         """
         self.model_name = model_name
@@ -63,9 +61,9 @@ class EmbeddingAgent:
             if not azure_deployment or not azure_endpoint:
                 raise ValueError("Azure deployment name and endpoint must be provided for Azure OpenAI")
 
-            logger.info(f"Using AzureOpenAIEmbeddings with deployment {azure_deployment}")
+            logger.info(f"Using AzureOpenAIEmbeddings with deployment '{azure_deployment}' "
+                        f"and endpoint '{azure_endpoint}'")
 
-            # Create Azure OpenAI embeddings with the exact parameter names as expected
             self.embeddings = AzureOpenAIEmbeddings(
                 azure_endpoint=azure_endpoint,
                 api_key=self.openai_api_key,
@@ -82,9 +80,8 @@ class EmbeddingAgent:
         # Dictionary to store vector stores by name
         self.vector_stores = {}
 
-        logger.info(f"Initialized EmbeddingAgent with model {model_name}")
-
-    # Rest of the methods remain the same
+        logger.info(f"Initialized EmbeddingAgent with model '{model_name}' "
+                    f"(Azure={use_azure}, Deployment='{azure_deployment}')")
 
     def create_vector_store(self,
                             documents: List[Document],
@@ -107,11 +104,9 @@ class EmbeddingAgent:
         logger.info(f"Creating vector store '{store_name}' with {len(documents)} documents")
 
         try:
-            # Create FAISS index from documents
             start_time = time.time()
             vector_store = FAISS.from_documents(documents, self.embeddings)
             elapsed_time = time.time() - start_time
-
             logger.info(f"Vector store creation completed in {elapsed_time:.2f} seconds")
 
             # Store in our dictionary
@@ -154,14 +149,10 @@ class EmbeddingAgent:
         logger.info(f"Updating vector store '{store_name}' with {len(documents)} new documents")
 
         try:
-            # Get existing vector store
             vector_store = self.vector_stores[store_name]
-
-            # Add new documents
             start_time = time.time()
             vector_store.add_documents(documents)
             elapsed_time = time.time() - start_time
-
             logger.info(f"Vector store update completed in {elapsed_time:.2f} seconds")
 
             # Persist if directory provided
@@ -187,11 +178,8 @@ class EmbeddingAgent:
             raise ValueError(f"Vector store '{store_name}' does not exist")
 
         vector_store = self.vector_stores[store_name]
-
-        # Ensure directory exists
         os.makedirs(persist_directory, exist_ok=True)
 
-        # Save to the specified directory
         logger.info(f"Persisting vector store '{store_name}' to {persist_directory}")
 
         try:
@@ -199,7 +187,6 @@ class EmbeddingAgent:
             vector_store.save_local(store_path)
             logger.info(f"Vector store saved to {store_path}")
 
-            # Also save metadata about the store
             metadata = {
                 "store_name": store_name,
                 "document_count": len(vector_store.docstore._dict),
@@ -231,25 +218,19 @@ class EmbeddingAgent:
             Loaded FAISS vector store
         """
         store_path = os.path.join(persist_directory, store_name)
-
         if not os.path.exists(store_path):
             raise FileNotFoundError(f"Vector store not found at {store_path}")
 
         logger.info(f"Loading vector store '{store_name}' from {store_path}")
 
         try:
-            # Load using the embedding function
             vector_store = FAISS.load_local(store_path, self.embeddings)
-
-            # Store in our dictionary
             self.vector_stores[store_name] = vector_store
 
-            # Load and log metadata if available
             metadata_path = os.path.join(persist_directory, f"{store_name}_metadata.pkl")
             if os.path.exists(metadata_path):
                 with open(metadata_path, 'rb') as f:
                     metadata = pickle.load(f)
-
                 logger.info(f"Loaded vector store with {metadata.get('document_count', 'unknown')} documents, "
                             f"created with {metadata.get('embedding_model', 'unknown')} embedding model")
             else:
@@ -301,7 +282,6 @@ class EmbeddingAgent:
         if not source_names:
             raise ValueError("No source vector stores provided")
 
-        # Check that all source stores exist
         missing_stores = [name for name in source_names if name not in self.vector_stores]
         if missing_stores:
             raise ValueError(f"Vector stores not found: {', '.join(missing_stores)}")
@@ -309,7 +289,7 @@ class EmbeddingAgent:
         logger.info(f"Combining vector stores {source_names} into '{target_name}'")
 
         try:
-            # Get all documents from all source stores
+            # Gather all documents from all source stores
             all_documents = []
             for name in source_names:
                 store = self.vector_stores[name]
@@ -317,7 +297,7 @@ class EmbeddingAgent:
                 all_documents.extend(documents)
                 logger.info(f"Added {len(documents)} documents from '{name}'")
 
-            # Create new vector store with all documents
+            # Create new vector store with these combined documents
             return self.create_vector_store(all_documents, target_name, persist_directory)
 
         except Exception as e:
@@ -336,9 +316,8 @@ class EmbeddingAgent:
             List of documents from the store
         """
         documents = []
-        for id, doc in vector_store.docstore._dict.items():
+        for doc_id, doc in vector_store.docstore._dict.items():
             documents.append(doc)
-
         return documents
 
     def get_stats(self, store_name: Optional[str] = None) -> Dict[str, Any]:
@@ -346,7 +325,7 @@ class EmbeddingAgent:
         Get statistics about vector stores.
 
         Args:
-            store_name: Name of specific vector store to get stats for (optional)
+            store_name: Name of a specific vector store to get stats for (optional)
 
         Returns:
             Dictionary with statistics
@@ -362,19 +341,17 @@ class EmbeddingAgent:
                 "embedding_model": self.model_name,
                 "use_azure": self.use_azure
             }
-        else:
-            # Stats for all stores
-            all_stats = {
-                "total_stores": len(self.vector_stores),
-                "store_names": list(self.vector_stores.keys()),
-                "embedding_model": self.model_name,
-                "use_azure": self.use_azure,
-                "stores": {}
+
+        # Otherwise, return stats for all vector stores
+        all_stats = {
+            "total_stores": len(self.vector_stores),
+            "store_names": list(self.vector_stores.keys()),
+            "embedding_model": self.model_name,
+            "use_azure": self.use_azure,
+            "stores": {}
+        }
+        for name, store in self.vector_stores.items():
+            all_stats["stores"][name] = {
+                "document_count": len(store.docstore._dict)
             }
-
-            for name, store in self.vector_stores.items():
-                all_stats["stores"][name] = {
-                    "document_count": len(store.docstore._dict)
-                }
-
-            return all_stats
+        return all_stats
