@@ -305,5 +305,102 @@ def main():
         status = "✅ SUCCESS" if success else "❌ FAILED"
         logger.info(f"{test_name}: {status}")
 
+def list_deployments():
+    """
+    List all available Azure OpenAI deployments and their details.
+
+    Returns:
+        A list of deployment objects
+    """
+    print("Listing all deployments...")
+
+    try:
+        # Create Azure OpenAI client with the token generated earlier
+        client = AzureOpenAI(
+            api_key=openai.api_key,
+            api_version="2023-05-15",
+            azure_endpoint=openai.api_base
+        )
+
+        # Get list of deployments
+        deployments = client.models.list()
+
+        # Print details about each deployment
+        print(f"Found {len(deployments.data) if hasattr(deployments, 'data') else 0} deployments:")
+
+        if hasattr(deployments, 'data'):
+            for i, deployment in enumerate(deployments.data):
+                print(f"\nDeployment #{i+1}:")
+                print(f"  ID: {deployment.id}")
+
+                # Print additional details if available
+                for attr in ['model', 'created_at', 'owned_by', 'object']:
+                    if hasattr(deployment, attr):
+                        print(f"  {attr.replace('_', ' ').title()}: {getattr(deployment, attr)}")
+
+        # Alternative approach using direct API call if the client method doesn't work
+        if not hasattr(deployments, 'data') or len(deployments.data) == 0:
+            print("\nTrying alternative API method to list deployments...")
+            direct_deployments = list_deployments_direct()
+            if direct_deployments and len(direct_deployments) > 0:
+                print(f"Found {len(direct_deployments)} deployments via direct API call:")
+                for i, deployment in enumerate(direct_deployments):
+                    print(f"\nDeployment #{i+1}:")
+                    for key, value in deployment.items():
+                        print(f"  {key.replace('_', ' ').title()}: {value}")
+            else:
+                print("No deployments found using direct API call")
+
+        return deployments
+
+    except Exception as e:
+        print(f"Error listing deployments: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return None
+
+
+def list_deployments_direct():
+    """
+    List deployments using direct REST API call as a fallback method.
+
+    Returns:
+        List of deployment objects or None if failed
+    """
+    import requests
+
+    # Ensure URL doesn't have trailing slash
+    base_url = openai.api_base
+    if base_url.endswith('/'):
+        base_url = base_url[:-1]
+
+    # Try both possible endpoint formats
+    urls = [
+        f"{base_url}/openai/deployments?api-version=2023-05-15",
+        f"{base_url}/deployments?api-version=2023-05-15"
+    ]
+
+    # Setup authentication header (using token from generate_access_token)
+    headers = {
+        "Authorization": f"Bearer {openai.api_key}",
+        "Content-Type": "application/json"
+    }
+
+    for url in urls:
+        try:
+            print(f"Trying endpoint: {url}")
+            response = requests.get(url, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("value", [])
+            else:
+                print(f"API call failed with status {response.status_code}: {response.text}")
+        except Exception as e:
+            print(f"Request failed: {str(e)}")
+
+    print("All endpoint attempts failed")
+    return None
+
 if __name__ == "__main__":
     main()
