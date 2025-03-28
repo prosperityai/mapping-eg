@@ -64,10 +64,12 @@ class EmbeddingAgent:
                 raise ValueError("Azure deployment name and endpoint must be provided for Azure OpenAI")
 
             logger.info(f"Using AzureOpenAIEmbeddings with deployment {azure_deployment}")
+
+            # Create Azure OpenAI embeddings with the correct parameter names
             self.embeddings = AzureOpenAIEmbeddings(
-                azure_deployment=azure_deployment,
+                deployment=azure_deployment,  # Use 'deployment' not 'azure_deployment'
                 openai_api_version=azure_api_version,
-                azure_endpoint=azure_endpoint,
+                azure_endpoint=azure_endpoint,  # This is the correct parameter name
                 openai_api_key=self.openai_api_key
             )
         else:
@@ -81,6 +83,8 @@ class EmbeddingAgent:
         self.vector_stores = {}
 
         logger.info(f"Initialized EmbeddingAgent with model {model_name}")
+
+    # Rest of the methods remain the same
 
     def create_vector_store(self,
                             documents: List[Document],
