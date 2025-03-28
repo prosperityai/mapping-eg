@@ -66,7 +66,7 @@ def initialize_agents(config):
                     model_name=config["embedding_model"],
                     use_azure=True,
                     azure_deployment=config["azure_embedding_deployment"],
-                    azure_endpoint=config["azure_api_base"],
+                    azure_endpoint=config["azure_api_base"],  # This matches what's in your config
                     azure_api_version=config["azure_api_version"]
                 )
             else:
@@ -102,7 +102,6 @@ def initialize_agents(config):
         st.error(f"Error initializing agents: {str(e)}")
         st.code(traceback.format_exc())
         return None, None, None, None
-
 def initialize_session_state():
     """Initialize session state variables if not already set"""
     # Step tracking
